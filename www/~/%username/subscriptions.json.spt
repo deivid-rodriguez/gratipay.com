@@ -4,16 +4,22 @@ from aspen import Response
 from gratipay.models.team import Team
 from gratipay.utils import get_participant
 
-[------------------------------------------------------------------------]
+[-----------------------------------------------------------------------------]
 
 def format_subscription(s):
     return {
         "team_name": s.team_name,
         "team_slug": s.team_slug,
-           "amount": s.amount,
-              "due": s.due,
+           "amount": str(s.amount),
+              "due": str(s.due),
             "ctime": s.ctime,
             "mtime": s.mtime
+    }
+
+def format_error(team_slug, error):
+    return {
+        "team_slug": team_slug,
+            "error": error
     }
 
 participant = get_participant(state, restrict=True)
@@ -51,6 +57,44 @@ if request.method == 'GET':
             }
     else:
         out = [format_subscription(s) for s in subscriptions]
+
+elif request.method == 'POST':
+    out = []
+    new_subscriptions = request.body
+
+    for s in new_subscriptions:
+        if 'team_slug' not in s:
+            one = format_error(None, "No team slug.")
+        elif 'amount' not in s:
+            one = format_error(s['team_slug'], "No amount.")
+        else:
+            team = Team.from_slug(s['team_slug'])
+            if team:
+                try:
+                    sub = participant.set_payment_instruction(
+                        s['team_slug'], parse_decimal(s['amount'])
+                    )
+                except Exception, exc:
+                    one = format_error(team.slug, exc.__class__.__name__)
+                else:
+                    # Payment instruction successfully created.
+                    # Create response.
+                    one = {
+                        "team_name": team.name,
+                        "team_slug": team.slug,
+                            "ctime": sub['ctime'],
+                            "mtime": sub['mtime'],
+                           "amount": str(sub['amount']),
+                              "due": str(sub['due'])
+                    }
+            else:
+                one = format_error(s['team_slug'], "Invalid team slug.")
+
+        out.append(one)
+
+else:
+    # Only allow GET, POST.
+    raise Response(405, "", {"Allow": "GET, POST"})
 
 [---] application/json
 out
